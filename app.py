@@ -1,6 +1,6 @@
 import streamlit as st
 import sqlite3
-from datetime import datetime
+from datetime import datetime, time
 import pandas as pd
 
 DB_NAME = "staff_tracker.db"
@@ -31,6 +31,9 @@ def init_db():
             emp_name TEXT NOT NULL,
             date TEXT NOT NULL,
             activity_type TEXT NOT NULL DEFAULT 'Production',
+            start_time TEXT,
+            end_time TEXT,
+            duration TEXT,
             task_desc TEXT NOT NULL,
             priority TEXT NOT NULL,
             status TEXT DEFAULT 'Pending'
@@ -93,46 +96,70 @@ if mode == "Staff Entry":
 
     st.divider()
 
-    st.markdown("### 📝 Log Today's Activity / Task")
+    st.markdown("### 📝 Log Time & Activity")
     with st.form("task_form", clear_on_submit=True):
         col_act, col_prio = st.columns([2, 1])
         with col_act:
-            activity = st.selectbox("Activity Type", ["Production", "Out of Office", "No Work", "Planned Leave", "Others"])
+            activity = st.selectbox("Activity Type", ["Production", "Break", "Out of Office", "No Work", "Planned Leave", "Others"])
         with col_prio:
             priority = st.selectbox("Priority", ["High", "Medium", "Low"], index=1)
             
-        desc = st.text_input("Description / Comment (Required for 'Others')", placeholder="Enter details here...")
+        col_t1, col_t2 = st.columns(2)
+        with col_t1:
+            start_t = st.time_input("Start Time", value=datetime.now().time())
+        with col_t2:
+            end_t = st.time_input("End Time", value=datetime.now().time())
+            
+        desc = st.text_input("Description / Notes", placeholder="E.g., Lunch break, Client call, Production task details...")
         
-        submitted = st.form_submit_button("Submit Entry")
+        submitted = st.form_submit_button("Submit Time Entry")
         if submitted:
-            if not desc.strip() and activity == "Others":
-                st.error("Please add a description for 'Others'!")
+            # Time difference calculation
+            t1 = datetime.combine(datetime.today(), start_t)
+            t2 = datetime.combine(datetime.today(), end_t)
+            
+            if t2 >= t1:
+                diff_minutes = int((t2 - t1).total_seconds() / 60)
+                hours = diff_minutes // 60
+                mins = diff_minutes % 60
+                duration_str = f"{hours}h {mins}m" if hours > 0 else f"{mins} mins"
             else:
-                final_desc = desc.strip() if desc.strip() else f"Status: {activity}"
-                conn = sqlite3.connect(DB_NAME)
-                cursor = conn.cursor()
-                cursor.execute("INSERT INTO tasks (emp_name, date, activity_type, task_desc, priority) VALUES (?, ?, ?, ?, ?)",
-                               (selected_emp, today_str, activity, final_desc, priority))
-                conn.commit()
-                conn.close()
-                st.success("Activity logged successfully!")
-                st.rerun()
+                duration_str = "N/A"
+
+            start_str = start_t.strftime("%I:%M %p")
+            end_str = end_t.strftime("%I:%M %p")
+            
+            final_desc = desc.strip() if desc.strip() else f"Activity: {activity}"
+            
+            conn = sqlite3.connect(DB_NAME)
+            cursor = conn.cursor()
+            cursor.execute("""
+                INSERT INTO tasks (emp_name, date, activity_type, start_time, end_time, duration, task_desc, priority) 
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            """, (selected_emp, today_str, activity, start_str, end_str, duration_str, final_desc, priority))
+            conn.commit()
+            conn.close()
+            
+            st.success(f"{activity} entry saved ({start_str} to {end_str} - {duration_str})!")
+            st.rerun()
 
     st.divider()
-    st.markdown(f"### 📊 Today's Work Board for **{selected_emp}** ({today_str})")
+    st.markdown(f"### 📊 Today's Detailed Timeline for **{selected_emp}** ({today_str})")
     
     conn = sqlite3.connect(DB_NAME)
-    df_tasks = pd.read_sql_query("SELECT task_id, activity_type, task_desc, priority, status FROM tasks WHERE emp_name = ? AND date = ?", 
-                                conn, params=(selected_emp, today_str))
+    df_tasks = pd.read_sql_query("""
+        SELECT task_id, activity_type as Activity, start_time as 'Start Time', end_time as 'End Time', duration as Duration, task_desc as Description, priority as Priority 
+        FROM tasks WHERE emp_name = ? AND date = ? ORDER BY task_id DESC
+    """, conn, params=(selected_emp, today_str))
     conn.close()
 
     if not df_tasks.empty:
         st.dataframe(df_tasks, use_container_width=True, hide_index=True)
     else:
-        st.info("No activities logged yet today.")
+        st.info("No timed activities logged yet today.")
 
 elif mode == "Admin Dashboard":
-    st.subheader("🔒 Admin Dashboard (Read-Only Overview)")
+    st.subheader("🔒 Admin Dashboard (Time & Task Overview)")
     
     selected_date = st.date_input("Select Date", datetime.now())
     date_str = selected_date.strftime("%Y-%m-%d")
@@ -143,8 +170,11 @@ elif mode == "Admin Dashboard":
     df_attn = pd.read_sql_query("SELECT emp_name as Employee, check_in as 'Check In', check_out as 'Check Out' FROM attendance WHERE date = ?", conn, params=(date_str,))
     st.dataframe(df_attn, use_container_width=True, hide_index=True)
 
-    st.markdown(f"#### 📝 All Staff Tasks for {date_str}")
-    df_all_tasks = pd.read_sql_query("SELECT emp_name as Employee, activity_type as Activity, task_desc as Description, priority as Priority, status as Status FROM tasks WHERE date = ?", conn, params=(date_str,))
+    st.markdown(f"#### ⏱️ All Staff Activity & Break Timeline for {date_str}")
+    df_all_tasks = pd.read_sql_query("""
+        SELECT emp_name as Employee, activity_type as Activity, start_time as 'Start Time', end_time as 'End Time', duration as Duration, task_desc as Description, priority as Priority 
+        FROM tasks WHERE date = ? ORDER BY task_id DESC
+    """, conn, params=(date_str,))
     st.dataframe(df_all_tasks, use_container_width=True, hide_index=True)
 
     st.divider()
@@ -156,27 +186,23 @@ elif mode == "Admin Dashboard":
         if not df_all_attn.empty:
             csv_attn = df_all_attn.to_csv(index=False).encode('utf-8')
             st.download_button(
-                label="📥 Download All Attendance (CSV)",
+                label="📥 Download Attendance CSV",
                 data=csv_attn,
                 file_name=f"attendance_backup_{today_str}.csv",
                 mime="text/csv",
                 use_container_width=True
             )
-        else:
-            st.info("No attendance records to download.")
 
     with col_d2:
         df_all_tasks_db = pd.read_sql_query("SELECT * FROM tasks", conn)
         if not df_all_tasks_db.empty:
             csv_tasks = df_all_tasks_db.to_csv(index=False).encode('utf-8')
             st.download_button(
-                label="📥 Download All Tasks (CSV)",
+                label="📥 Download Tasks & Time Log CSV",
                 data=csv_tasks,
-                file_name=f"tasks_backup_{today_str}.csv",
+                file_name=f"tasks_time_backup_{today_str}.csv",
                 mime="text/csv",
                 use_container_width=True
             )
-        else:
-            st.info("No task records to download.")
 
     conn.close()
