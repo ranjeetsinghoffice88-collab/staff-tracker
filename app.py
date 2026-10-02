@@ -137,12 +137,46 @@ elif mode == "Admin Dashboard":
     selected_date = st.date_input("Select Date", datetime.now())
     date_str = selected_date.strftime("%Y-%m-%d")
 
-    st.markdown(f"#### 📅 Attendance Summary for {date_str}")
     conn = sqlite3.connect(DB_NAME)
+
+    st.markdown(f"#### 📅 Attendance Summary for {date_str}")
     df_attn = pd.read_sql_query("SELECT emp_name as Employee, check_in as 'Check In', check_out as 'Check Out' FROM attendance WHERE date = ?", conn, params=(date_str,))
     st.dataframe(df_attn, use_container_width=True, hide_index=True)
 
     st.markdown(f"#### 📝 All Staff Tasks for {date_str}")
     df_all_tasks = pd.read_sql_query("SELECT emp_name as Employee, activity_type as Activity, task_desc as Description, priority as Priority, status as Status FROM tasks WHERE date = ?", conn, params=(date_str,))
     st.dataframe(df_all_tasks, use_container_width=True, hide_index=True)
+
+    st.divider()
+    st.markdown("### 📥 Download Data Backup")
+    col_d1, col_d2 = st.columns(2)
+    
+    with col_d1:
+        df_all_attn = pd.read_sql_query("SELECT * FROM attendance", conn)
+        if not df_all_attn.empty:
+            csv_attn = df_all_attn.to_csv(index=False).encode('utf-8')
+            st.download_button(
+                label="📥 Download All Attendance (CSV)",
+                data=csv_attn,
+                file_name=f"attendance_backup_{today_str}.csv",
+                mime="text/csv",
+                use_container_width=True
+            )
+        else:
+            st.info("No attendance records to download.")
+
+    with col_d2:
+        df_all_tasks_db = pd.read_sql_query("SELECT * FROM tasks", conn)
+        if not df_all_tasks_db.empty:
+            csv_tasks = df_all_tasks_db.to_csv(index=False).encode('utf-8')
+            st.download_button(
+                label="📥 Download All Tasks (CSV)",
+                data=csv_tasks,
+                file_name=f"tasks_backup_{today_str}.csv",
+                mime="text/csv",
+                use_container_width=True
+            )
+        else:
+            st.info("No task records to download.")
+
     conn.close()
