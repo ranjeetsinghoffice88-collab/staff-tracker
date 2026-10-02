@@ -8,6 +8,7 @@ DB_NAME = "staff_tracker.db"
 def init_db():
     conn = sqlite3.connect(DB_NAME)
     cursor = conn.cursor()
+    
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS employees (
             emp_id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -40,6 +41,16 @@ def init_db():
         )
     ''')
     
+    # Auto-migration: Add missing columns if database already exists
+    cursor.execute("PRAGMA table_info(tasks)")
+    columns = [col[1] for col in cursor.fetchall()]
+    if 'start_time' not in columns:
+        cursor.execute("ALTER TABLE tasks ADD COLUMN start_time TEXT")
+    if 'end_time' not in columns:
+        cursor.execute("ALTER TABLE tasks ADD COLUMN end_time TEXT")
+    if 'duration' not in columns:
+        cursor.execute("ALTER TABLE tasks ADD COLUMN duration TEXT")
+
     actual_staff = [("Diya", "Operations"), ("Shailesh", "Operations"), ("Gaurav", "Operations")]
     for name, dept in actual_staff:
         cursor.execute("INSERT OR IGNORE INTO employees (name, department) VALUES (?, ?)", (name, dept))
@@ -114,7 +125,6 @@ if mode == "Staff Entry":
         
         submitted = st.form_submit_button("Submit Time Entry")
         if submitted:
-            # Time difference calculation
             t1 = datetime.combine(datetime.today(), start_t)
             t2 = datetime.combine(datetime.today(), end_t)
             
