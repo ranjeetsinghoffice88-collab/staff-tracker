@@ -2,8 +2,13 @@ import streamlit as st
 import sqlite3
 from datetime import datetime, time
 import pandas as pd
+import pytz
 
 DB_NAME = "staff_tracker.db"
+
+def get_india_now():
+    tz = pytz.timezone('Asia/Kolkata')
+    return datetime.now(tz)
 
 def init_db():
     conn = sqlite3.connect(DB_NAME)
@@ -41,7 +46,7 @@ def init_db():
         )
     ''')
     
-    # Auto-migration: Add missing columns if database already exists
+    # Auto-migration
     cursor.execute("PRAGMA table_info(tasks)")
     columns = [col[1] for col in cursor.fetchall()]
     if 'start_time' not in columns:
@@ -70,7 +75,8 @@ selected_emp = st.sidebar.selectbox("Select Employee", staff_list)
 
 mode = st.sidebar.radio("View Mode", ["Staff Entry", "Admin Dashboard"])
 
-today_str = datetime.now().strftime("%Y-%m-%d")
+now_ist = get_india_now()
+today_str = now_ist.strftime("%Y-%m-%d")
 
 if mode == "Staff Entry":
     st.subheader(f"Welcome, {selected_emp} 👋")
@@ -80,7 +86,7 @@ if mode == "Staff Entry":
     
     with col1:
         if st.button("🟢 Morning Check-In", use_container_width=True):
-            now_time = datetime.now().strftime("%I:%M %p")
+            now_time = get_india_now().strftime("%I:%M %p")
             conn = sqlite3.connect(DB_NAME)
             cursor = conn.cursor()
             try:
@@ -94,7 +100,7 @@ if mode == "Staff Entry":
 
     with col2:
         if st.button("🔴 Evening Check-Out", use_container_width=True):
-            now_time = datetime.now().strftime("%I:%M %p")
+            now_time = get_india_now().strftime("%I:%M %p")
             conn = sqlite3.connect(DB_NAME)
             cursor = conn.cursor()
             cursor.execute("UPDATE attendance SET check_out = ? WHERE emp_name = ? AND date = ?", (now_time, selected_emp, today_str))
@@ -117,9 +123,9 @@ if mode == "Staff Entry":
             
         col_t1, col_t2 = st.columns(2)
         with col_t1:
-            start_t = st.time_input("Start Time", value=datetime.now().time())
+            start_t = st.time_input("Start Time", value=now_ist.time())
         with col_t2:
-            end_t = st.time_input("End Time", value=datetime.now().time())
+            end_t = st.time_input("End Time", value=now_ist.time())
             
         desc = st.text_input("Description / Notes", placeholder="E.g., Lunch break, Client call, Production task details...")
         
@@ -171,7 +177,7 @@ if mode == "Staff Entry":
 elif mode == "Admin Dashboard":
     st.subheader("🔒 Admin Dashboard (Time & Task Overview)")
     
-    selected_date = st.date_input("Select Date", datetime.now())
+    selected_date = st.date_input("Select Date", now_ist.date())
     date_str = selected_date.strftime("%Y-%m-%d")
 
     conn = sqlite3.connect(DB_NAME)
