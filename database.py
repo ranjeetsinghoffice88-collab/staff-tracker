@@ -13,7 +13,6 @@ def init_db():
     conn = sqlite3.connect(DB_NAME)
     cursor = conn.cursor()
     
-    # Table 1: Employees
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS employees (
             emp_id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -21,8 +20,6 @@ def init_db():
             department TEXT NOT NULL
         )
     ''')
-    
-    # Table 2: Attendance
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS attendance (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -33,8 +30,6 @@ def init_db():
             UNIQUE(emp_name, date)
         )
     ''')
-    
-    # Table 3: Live Tasks
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS live_tasks (
             task_id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -50,20 +45,7 @@ def init_db():
         )
     ''')
 
-    # Table 4: Dress Code Tracker (Naya Table)
-    cursor.execute('''
-        CREATE TABLE IF NOT EXISTS dress_code (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            emp_name TEXT NOT NULL,
-            date TEXT NOT NULL,
-            in_uniform TEXT NOT NULL,
-            reason TEXT,
-            timestamp TEXT NOT NULL,
-            UNIQUE(emp_name, date)
-        )
-    ''')
-
-    actual_staff = [("Diya", "Operations"), ("Shailesh", "Operations"), ("Gaurav", "Operations"), ("Imtiyaz", "Operations")]
+    actual_staff = [("Diya", "Operations"), ("Shailesh", "Operations"), ("Gaurav", "Operations")]
     for name, dept in actual_staff:
         cursor.execute("INSERT OR IGNORE INTO employees (name, department) VALUES (?, ?)", (name, dept))
         
@@ -77,7 +59,7 @@ st.set_page_config(page_title="Daily Staff Tracker", layout="wide")
 st.title("📋 Daily Staff Tracker & Workboard")
 
 st.sidebar.header("Navigation")
-staff_list = ["Diya", "Shailesh", "Gaurav", "Imtiyaz"]
+staff_list = ["Diya", "Shailesh", "Gaurav"]
 selected_emp = st.sidebar.selectbox("Select Employee", staff_list)
 
 mode = st.sidebar.radio("View Mode", ["Staff Entry", "Admin Dashboard"])
@@ -85,13 +67,9 @@ mode = st.sidebar.radio("View Mode", ["Staff Entry", "Admin Dashboard"])
 now_ist = get_india_now()
 today_str = now_ist.strftime("%Y-%m-%d")
 
-# ---------------------------------------------------------
-# VIEW 1: STAFF ENTRY
-# ---------------------------------------------------------
 if mode == "Staff Entry":
     st.subheader(f"Welcome, {selected_emp} 👋")
     
-    # Section 1: Attendance
     st.markdown("### ⏰ Daily Attendance")
     col1, col2, col3 = st.columns([1, 1, 2])
     
@@ -124,54 +102,12 @@ if mode == "Staff Entry":
 
     st.divider()
 
-    # Section 2: Daily Dress Code Checker (Naya Feature)
-    st.markdown("### 👔 Daily Dress Code Verification")
-    
-    conn = sqlite3.connect(DB_NAME)
-    cursor = conn.cursor()
-    cursor.execute("SELECT in_uniform, reason FROM dress_code WHERE emp_name = ? AND date = ?", (selected_emp, today_str))
-    dress_record = cursor.fetchone()
-    conn.close()
-
-    if dress_record:
-        st.success(f"✅ Today's Uniform Status Submitted: **{dress_record[0]}**" + (f" (Reason: {dress_record[1]})" if dress_record[1] else ""))
-    else:
-        with st.form("dress_code_form", clear_on_submit=False):
-            dress_opt = st.radio(
-                "Are you wearing the official office uniform / dress code today?",
-                ["Yes, Full Uniform 🟢", "No / Casual / Partial 🔴"],
-                horizontal=True
-            )
-            reason_input = st.text_input("If 'No', please state the reason:", placeholder="e.g. Uniform on washing / Emergency")
-            submit_dress = st.form_submit_button("Submit Dress Code Status")
-
-            if submit_dress:
-                is_uniform = "Yes" if "Yes" in dress_opt else "No"
-                now_ts = get_india_now().strftime("%Y-%m-%d %I:%M %p")
-                
-                conn = sqlite3.connect(DB_NAME)
-                cursor = conn.cursor()
-                try:
-                    cursor.execute("""
-                        INSERT INTO dress_code (emp_name, date, in_uniform, reason, timestamp)
-                        VALUES (?, ?, ?, ?, ?)
-                    """, (selected_emp, today_str, is_uniform, reason_input if is_uniform == "No" else "-", now_ts))
-                    conn.commit()
-                    st.success("Dress code status recorded successfully!")
-                    st.rerun()
-                except sqlite3.IntegrityError:
-                    st.warning("Dress code status already submitted for today!")
-                finally:
-                    conn.close()
-
-    st.divider()
-
-    # Section 3: Live Activity Tracker
     st.markdown("### ⏱️ Live Activity Tracker")
     
     conn = sqlite3.connect(DB_NAME)
     cursor = conn.cursor()
     
+    # Check currently active task
     cursor.execute("""
         SELECT task_id, activity_type, start_time, task_desc 
         FROM live_tasks 
@@ -190,6 +126,7 @@ if mode == "Staff Entry":
             end_t_dt = get_india_now()
             end_t_str = end_t_dt.strftime("%I:%M %p")
             
+            # Calculate Duration
             start_t_dt = datetime.strptime(f"{today_str} {start_t_str}", "%Y-%m-%d %I:%M %p").replace(tzinfo=ZoneInfo('Asia/Kolkata'))
             diff_mins = int((end_t_dt - start_t_dt).total_seconds() / 60)
             
@@ -201,52 +138,54 @@ if mode == "Staff Entry":
                 UPDATE live_tasks 
                 SET end_time = ?, duration = ?, status = 'Completed' 
                 WHERE task_id = ?
-            """, (end_t_str, dur_str, task_id))
+            """, (end_str if 'end_str' in locals() else end_t_str, dur_str, task_id))
             conn.commit()
             st.success(f"Activity stopped at {end_t_str}! Total duration: {dur_str}")
             st.rerun()
     else:
         st.write("🟢 **No activity running right now. Choose an activity to start:**")
         
-        st.markdown("#### Start New Activity")
-        with st.form("start_task_form", clear_on_submit=True):
-            col_act, col_prio = st.columns([2, 1])
-            with col_act:
-                activity = st.selectbox("Activity Type", ["Production", "Break", "Out of Office", "No Work", "Planned Leave", "Others"])
-            with col_prio:
-                priority = st.selectbox("Priority", ["High", "Medium", "Low"], index=1)
-                
-            desc = st.text_input("Description / Notes (Optional)", placeholder="E.g., Lunch break, Client call, Project task details...")
+    st.markdown("#### Start New Activity")
+    with st.form("start_task_form", clear_on_submit=True):
+        col_act, col_prio = st.columns([2, 1])
+        with col_act:
+            activity = st.selectbox("Activity Type", ["Production", "Break", "Out of Office", "No Work", "Planned Leave", "Others"])
+        with col_prio:
+            priority = st.selectbox("Priority", ["High", "Medium", "Low"], index=1)
             
-            start_submitted = st.form_submit_button("▶️ Start Activity Now")
+        desc = st.text_input("Description / Notes (Optional)", placeholder="E.g., Lunch break, Client call, Project task details...")
+        
+        start_submitted = st.form_submit_button("▶️ Start Activity Now")
+        
+        if start_submitted:
+            now_dt = get_india_now()
+            start_t_str = now_dt.strftime("%I:%M %p")
             
-            if start_submitted:
-                now_dt = get_india_now()
-                start_t_str = now_dt.strftime("%I:%M %p")
-                
-                cursor.execute("""
-                    SELECT task_id, start_time FROM live_tasks 
-                    WHERE emp_name = ? AND date = ? AND status = 'Ongoing'
-                """, (selected_emp, today_str))
-                prev_task = cursor.fetchone()
-                
-                if prev_task:
-                    p_id, p_start = prev_task
-                    p_start_dt = datetime.strptime(f"{today_str} {p_start}", "%Y-%m-%d %I:%M %p").replace(tzinfo=ZoneInfo('Asia/Kolkata'))
-                    diff_m = int((now_dt - p_start_dt).total_seconds() / 60)
-                    dur_s = f"{diff_m//60}h {diff_m%60}m" if diff_m >= 60 else f"{diff_m} mins"
-                    cursor.execute("UPDATE live_tasks SET end_time = ?, duration = ?, status = 'Completed' WHERE task_id = ?", 
-                                   (start_t_str, dur_s, p_id))
+            # Auto-stop any existing ongoing task if missed
+            cursor.execute("""
+                SELECT task_id, start_time FROM live_tasks 
+                WHERE emp_name = ? AND date = ? AND status = 'Ongoing'
+            """, (selected_emp, today_str))
+            prev_task = cursor.fetchone()
+            
+            if prev_task:
+                p_id, p_start = prev_task
+                p_start_dt = datetime.strptime(f"{today_str} {p_start}", "%Y-%m-%d %I:%M %p").replace(tzinfo=ZoneInfo('Asia/Kolkata'))
+                diff_m = int((now_dt - p_start_dt).total_seconds() / 60)
+                dur_s = f"{diff_m//60}h {diff_m%60}m" if diff_m >= 60 else f"{diff_m} mins"
+                cursor.execute("UPDATE live_tasks SET end_time = ?, duration = ?, status = 'Completed' WHERE task_id = ?", 
+                               (start_t_str, dur_s, p_id))
 
-                final_desc = desc.strip() if desc.strip() else f"Activity: {activity}"
-                cursor.execute("""
-                    INSERT INTO live_tasks (emp_name, date, activity_type, start_time, task_desc, priority, status)
-                    VALUES (?, ?, ?, ?, ?, ?, 'Ongoing')
-                """, (selected_emp, today_str, activity, start_t_str, final_desc, priority))
-                
-                conn.commit()
-                st.success(f"Started '{activity}' at {start_t_str}!")
-                st.rerun()
+            # Insert new active task
+            final_desc = desc.strip() if desc.strip() else f"Activity: {activity}"
+            cursor.execute("""
+                INSERT INTO live_tasks (emp_name, date, activity_type, start_time, task_desc, priority, status)
+                VALUES (?, ?, ?, ?, ?, ?, 'Ongoing')
+            """, (selected_emp, today_str, activity, start_t_str, final_desc, priority))
+            
+            conn.commit()
+            st.success(f"Started '{activity}' at {start_t_str}!")
+            st.rerun()
 
     conn.close()
 
@@ -266,31 +205,18 @@ if mode == "Staff Entry":
     else:
         st.info("No activities logged yet today.")
 
-# ---------------------------------------------------------
-# VIEW 2: ADMIN DASHBOARD & HISTORICAL RECORDS
-# ---------------------------------------------------------
 elif mode == "Admin Dashboard":
-    st.subheader("🔒 Admin Dashboard (Time, Dress Code & History Overview)")
+    st.subheader("🔒 Admin Dashboard (Time & Task Overview)")
     
-    selected_date = st.date_input("Select Single Date View", now_ist.date())
+    selected_date = st.date_input("Select Date", now_ist.date())
     date_str = selected_date.strftime("%Y-%m-%d")
 
     conn = sqlite3.connect(DB_NAME)
 
-    # Attendance Summary
     st.markdown(f"#### 📅 Attendance Summary for {date_str}")
     df_attn = pd.read_sql_query("SELECT emp_name as Employee, check_in as 'Check In', check_out as 'Check Out' FROM attendance WHERE date = ?", conn, params=(date_str,))
     st.dataframe(df_attn, use_container_width=True, hide_index=True)
 
-    # Dress Code Summary (Naya Section)
-    st.markdown(f"#### 👔 Uniform Compliance Summary for {date_str}")
-    df_dress_today = pd.read_sql_query("SELECT emp_name as Employee, in_uniform as 'In Uniform', reason as 'Reason / Note', timestamp as 'Submitted At' FROM dress_code WHERE date = ?", conn, params=(date_str,))
-    if not df_dress_today.empty:
-        st.dataframe(df_dress_today, use_container_width=True, hide_index=True)
-    else:
-        st.info(f"No dress code entries recorded for {date_str}.")
-
-    # Activity Timeline
     st.markdown(f"#### ⏱️ Live Staff Activity & Break Timeline for {date_str}")
     df_all_tasks = pd.read_sql_query("""
         SELECT emp_name as Employee, activity_type as Activity, start_time as 'Start Time', 
@@ -301,52 +227,8 @@ elif mode == "Admin Dashboard":
     st.dataframe(df_all_tasks, use_container_width=True, hide_index=True)
 
     st.divider()
-
-    # NAYA FEATURE: PAST DATA HISTORY SEARCH & CSV DOWNLOAD
-    st.markdown("### 🔍 Past Data History Search & Filter")
-    
-    col_h1, col_h2, col_h3 = st.columns(3)
-    with col_h1:
-        selected_staff_filter = st.multiselect("Filter Employee(s)", staff_list, default=staff_list)
-    with col_h2:
-        from_date = st.date_input("From Date", now_ist.date())
-    with col_h3:
-        to_date = st.date_input("To Date", now_ist.date())
-
-    from_date_str = from_date.strftime("%Y-%m-%d")
-    to_date_str = to_date.strftime("%Y-%m-%d")
-
-    if selected_staff_filter:
-        placeholders = ', '.join('?' for _ in selected_staff_filter)
-        
-        # Historical Activity Log
-        st.markdown(f"##### 📜 Activity History ({from_date_str} to {to_date_str})")
-        params_tasks = selected_staff_filter + [from_date_str, to_date_str]
-        query_hist_tasks = f"""
-            SELECT date as Date, emp_name as Employee, activity_type as Activity, start_time as 'Start Time', 
-                   end_time as 'End Time', duration as Duration, task_desc as Description, status as Status
-            FROM live_tasks 
-            WHERE emp_name IN ({placeholders}) AND date BETWEEN ? AND ? 
-            ORDER BY date DESC, task_id DESC
-        """
-        df_hist_tasks = pd.read_sql_query(query_hist_tasks, conn, params=params_tasks)
-        st.dataframe(df_hist_tasks, use_container_width=True, hide_index=True)
-
-        # Historical Dress Code Log
-        st.markdown(f"##### 👔 Dress Code History ({from_date_str} to {to_date_str})")
-        params_dress = selected_staff_filter + [from_date_str, to_date_str]
-        query_hist_dress = f"""
-            SELECT date as Date, emp_name as Employee, in_uniform as 'In Uniform', reason as Reason, timestamp as Timestamp
-            FROM dress_code 
-            WHERE emp_name IN ({placeholders}) AND date BETWEEN ? AND ? 
-            ORDER BY date DESC
-        """
-        df_hist_dress = pd.read_sql_query(query_hist_dress, conn, params=params_dress)
-        st.dataframe(df_hist_dress, use_container_width=True, hide_index=True)
-
-    st.divider()
-    st.markdown("### 📥 Download Database Backup CSVs")
-    col_d1, col_d2, col_d3 = st.columns(3)
+    st.markdown("### 📥 Download Data Backup")
+    col_d1, col_d2 = st.columns(2)
     
     with col_d1:
         df_all_attn = pd.read_sql_query("SELECT * FROM attendance", conn)
@@ -365,21 +247,9 @@ elif mode == "Admin Dashboard":
         if not df_all_tasks_db.empty:
             csv_tasks = df_all_tasks_db.to_csv(index=False).encode('utf-8')
             st.download_button(
-                label="📥 Download Tasks Backup CSV",
+                label="📥 Download Tasks & Time Log CSV",
                 data=csv_tasks,
-                file_name=f"tasks_backup_{today_str}.csv",
-                mime="text/csv",
-                use_container_width=True
-            )
-
-    with col_d3:
-        df_all_dress = pd.read_sql_query("SELECT * FROM dress_code", conn)
-        if not df_all_dress.empty:
-            csv_dress = df_all_dress.to_csv(index=False).encode('utf-8')
-            st.download_button(
-                label="📥 Download Dress Code CSV",
-                data=csv_dress,
-                file_name=f"dress_code_backup_{today_str}.csv",
+                file_name=f"tasks_live_clock_backup_{today_str}.csv",
                 mime="text/csv",
                 use_container_width=True
             )
