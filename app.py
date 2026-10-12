@@ -63,7 +63,7 @@ def init_db():
         )
     ''')
 
-    actual_staff = [("Diya", "Operations"), ("Shailesh", "Operations"), ("Gaurav", "Operations"), ("Imtiyaz", "Operations")]
+    actual_staff = [("Diya", "Operations"), ("Shailesh", "Operations"), ("Gaurav", "Operations"), ("Komal", "Operations"), ("Vijay", "Operations"), ("Navinder", "Operations"), ("Imtiyaz", "Operations")]
     for name, dept in actual_staff:
         cursor.execute("INSERT OR IGNORE INTO employees (name, department) VALUES (?, ?)", (name, dept))
         
